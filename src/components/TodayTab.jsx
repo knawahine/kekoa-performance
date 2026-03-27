@@ -3,9 +3,10 @@ import { S } from '../lib/styles';
 import Card from './shared/Card';
 import Label from './shared/Label';
 import MacroBar from './shared/MacroBar';
+import StreakDashboard from './StreakDashboard';
 import { SUPPS } from '../data/supplements';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests, onToggleFreeze }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
@@ -47,6 +48,15 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
           </div>
         </div>
       </Card>
+
+      {/* Streaks */}
+      <StreakDashboard
+        streaks={streaks}
+        personalBests={personalBests}
+        streakFreezeUsed={!!(st.streakFreezes || {})[cappedWk]}
+        onToggleFreeze={onToggleFreeze}
+        currentWeek={cappedWk}
+      />
 
       {/* Macros */}
       <Card>

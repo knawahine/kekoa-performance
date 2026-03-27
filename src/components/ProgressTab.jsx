@@ -3,8 +3,9 @@ import { S } from '../lib/styles';
 import { CK_FIELDS } from '../data/rehab';
 import Card from './shared/Card';
 import Label from './shared/Label';
+import WeeklyConsistencyChart from './WeeklyConsistencyChart';
 
-export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhotoUpload }) {
+export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhotoUpload, weeklyConsistency, personalBests }) {
   const [wIn, setWIn] = useState("");
   const [form, setForm] = useState(st.checkins[cw] || {});
   const [saved, setSaved] = useState(!!st.checkins[cw]);
@@ -86,6 +87,9 @@ export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhoto
           </div>
         </Card>
       )}
+
+      {/* Weekly Consistency */}
+      <WeeklyConsistencyChart weeklyData={weeklyConsistency} personalBests={personalBests} />
 
       {/* Weekly Check-In */}
       <Card>

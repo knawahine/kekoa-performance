@@ -7,6 +7,7 @@ import { useAuth } from './context/AuthContext';
 import { createSyncEngine, diffState } from './lib/sync';
 import { compressImage, uploadPhoto } from './lib/photos';
 import { migrateLocalToSupabase, isMigrated } from './lib/migrate';
+import { calcStreaks, calcWeeklyConsistency, updatePersonalBests } from './lib/streaks';
 import { SPLIT } from './data/workouts';
 import { TM, OM, TGT } from './data/meals';
 import { SUPPS } from './data/supplements';
@@ -195,6 +196,29 @@ export default function App({ initialOnboardState }) {
   };
   const goMaintenance = () => setSt((s) => ({ ...s, mode: "maintenance" }));
 
+  // ── Gamification: Streaks, Consistency, Personal Bests ─────
+  const streaks = useMemo(() => calcStreaks(st), [st.mealChecks, st.exLogs, st.suppChecks, st.streakFreezes]);
+  const weeklyConsistency = useMemo(() => calcWeeklyConsistency(st, 8), [st.mealChecks, st.exLogs, st.suppChecks]);
+
+  // Update personal bests whenever streaks change
+  useEffect(() => {
+    const newBests = updatePersonalBests(streaks, st.personalBests);
+    const changed = Object.keys(newBests).some((k) => newBests[k] !== (st.personalBests || {})[k]);
+    if (changed) {
+      setSt((s) => ({ ...s, personalBests: newBests }));
+    }
+  }, [streaks]);
+
+  const toggleStreakFreeze = () => {
+    setSt((s) => ({
+      ...s,
+      streakFreezes: {
+        ...(s.streakFreezes || {}),
+        [cappedWk]: !(s.streakFreezes || {})[cappedWk],
+      },
+    }));
+  };
+
   const tabs = [
     { id: "today", l: "Today", i: "📋" },
     { id: "meals", l: "Meals", i: "🍽️" },
@@ -251,11 +275,11 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}
-        {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks, onPhotoUpload: handlePhotoUpload }} />}
+        {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks, onPhotoUpload: handlePhotoUpload, weeklyConsistency, personalBests: st.personalBests }} />}
         {tab === "review" && <ReviewTab st={st} startDate={activeProg.start} maxWk={cappedWk} />}
       </div>
 
