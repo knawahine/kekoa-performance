@@ -1,7 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { S } from './lib/styles';
-import { today, loadState, saveState, getPhase, getPhaseKey } from './lib/helpers';
+import { today, loadState, saveState, getPhase, getPhaseKey, loadRemoteState } from './lib/helpers';
 import { calcMacros } from './lib/macros';
+import { supabase } from './lib/supabase';
+import { useAuth } from './context/AuthContext';
+import { createSyncEngine, diffState } from './lib/sync';
+import { compressImage, uploadPhoto } from './lib/photos';
+import { migrateLocalToSupabase, isMigrated } from './lib/migrate';
 import { SPLIT } from './data/workouts';
 import { TM, OM, TGT } from './data/meals';
 import { SUPPS } from './data/supplements';
@@ -12,7 +17,55 @@ import RehabTab from './components/RehabTab';
 import ProgressTab from './components/ProgressTab';
 import ReviewTab from './components/ReviewTab';
 
+// ── Supabase Sync Hook ──────────────────────────────────────
+function useSupabaseSync(st) {
+  const { user } = useAuth();
+  const prevRef = useRef(st);
+  const engineRef = useRef(null);
+
+  // Initialize engine when user changes
+  useEffect(() => {
+    if (user) {
+      engineRef.current = createSyncEngine(user.id);
+      engineRef.current.retryQueue(st);
+    }
+    return () => {
+      if (engineRef.current) engineRef.current.flush(st);
+    };
+  }, [user]);
+
+  // Watch for state changes and sync
+  useEffect(() => {
+    if (!user || !engineRef.current) return;
+    const prev = prevRef.current;
+    prevRef.current = st;
+
+    const changedTables = diffState(prev, st);
+    for (const table of changedTables) {
+      engineRef.current.debouncedSync(table, st);
+    }
+  }, [st, user]);
+
+  // Flush on page unload
+  useEffect(() => {
+    const handleUnload = () => engineRef.current?.flush(st);
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [st]);
+
+  // Retry queue on reconnect
+  useEffect(() => {
+    const handleOnline = () => {
+      if (engineRef.current) engineRef.current.retryQueue(st);
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [st]);
+}
+
+// ── Main App ─────────────────────────────────────────────────
 export default function App() {
+  const { user, signOut } = useAuth();
   const [tab, setTab] = useState("today");
   const [st, setSt] = useState(() => loadState() || {
     startDate: today(),
@@ -30,8 +83,55 @@ export default function App() {
     mode: "cut",
     programs: [{ name: "12-Week Performance Cut", start: today(), weeks: 12, active: true }],
   });
+  const [remoteLoaded, setRemoteLoaded] = useState(false);
+  const [migrating, setMigrating] = useState(false);
 
+  // Save to localStorage on every change (existing behavior)
   useEffect(() => { saveState(st); }, [st]);
+
+  // Sync to Supabase
+  useSupabaseSync(st);
+
+  // Load remote state on first auth
+  useEffect(() => {
+    if (!user || remoteLoaded) return;
+    loadRemoteState(supabase, user.id)
+      .then(async (remote) => {
+        if (remote) {
+          // Remote data exists — use it
+          setSt((prev) => ({ ...prev, ...remote }));
+        } else if (loadState() && !isMigrated()) {
+          // No remote data but local data exists — migrate
+          setMigrating(true);
+          try {
+            await migrateLocalToSupabase(user.id, loadState());
+          } catch (err) {
+            console.error('[migration] Failed:', err);
+          }
+          setMigrating(false);
+        }
+        setRemoteLoaded(true);
+      })
+      .catch((err) => {
+        console.warn('[remote-load] Failed:', err.message);
+        setRemoteLoaded(true);
+      });
+  }, [user, remoteLoaded]);
+
+  // ── Photo upload handler (compress → Supabase Storage) ─────
+  const handlePhotoUpload = async (weekNum, angle, file) => {
+    try {
+      const blob = await compressImage(file);
+      const url = await uploadPhoto(user.id, weekNum, angle, blob);
+      setSt((s) => ({ ...s, photos: { ...s.photos, [weekNum]: { ...(s.photos[weekNum] || {}), [angle]: url } } }));
+    } catch (err) {
+      console.error('Photo upload failed, falling back to base64:', err);
+      // Fallback to base64 localStorage
+      const reader = new FileReader();
+      reader.onload = (ev) => setSt((s) => ({ ...s, photos: { ...s.photos, [weekNum]: { ...(s.photos[weekNum] || {}), [angle]: ev.target.result } } }));
+      reader.readAsDataURL(file);
+    }
+  };
 
   const d = today();
   const dow = new Date().getDay();
@@ -100,6 +200,17 @@ export default function App() {
     <div style={{ fontFamily: "'Barlow',system-ui,sans-serif", background: S.bg, color: S.tx, minHeight: "100vh", minHeight: "100dvh", maxWidth: 480, margin: "0 auto", paddingBottom: 80 }}>
       <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
 
+      {/* Migration Overlay */}
+      {migrating && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,23,0.95)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>☁️</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", fontFamily: "'Barlow Condensed'" }}>Migrating to cloud...</div>
+            <div style={{ fontSize: 12, color: S.dm, marginTop: 8 }}>This only happens once</div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ background: "linear-gradient(135deg,#0d1520,#1a2744)", padding: "18px 18px 14px", borderBottom: "1px solid rgba(56,145,255,0.12)", position: "sticky", top: 0, zIndex: 50 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -111,6 +222,16 @@ export default function App() {
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 28, fontWeight: 900, color: isCut ? S.bl : S.gr, fontFamily: "'Barlow Condensed'", lineHeight: 1 }}>WK {cappedWk}</div>
             <div style={{ fontSize: 10, color: S.dm }}>{isCut ? `of ${totalWks}` : "ongoing"}</div>
+            <button
+              onClick={signOut}
+              style={{
+                background: "none", border: "none", color: S.dm, fontSize: 9,
+                cursor: "pointer", padding: "2px 0", marginTop: 2,
+                fontFamily: "'Barlow'", fontWeight: 600, letterSpacing: 0.5,
+              }}
+            >
+              Sign Out
+            </button>
           </div>
         </div>
         {isCut && (
@@ -126,7 +247,7 @@ export default function App() {
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}
-        {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks }} />}
+        {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks, onPhotoUpload: handlePhotoUpload }} />}
         {tab === "review" && <ReviewTab st={st} startDate={activeProg.start} maxWk={cappedWk} />}
       </div>
 

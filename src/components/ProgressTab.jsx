@@ -4,7 +4,7 @@ import { CK_FIELDS } from '../data/rehab';
 import Card from './shared/Card';
 import Label from './shared/Label';
 
-export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks }) {
+export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhotoUpload }) {
   const [wIn, setWIn] = useState("");
   const [form, setForm] = useState(st.checkins[cw] || {});
   const [saved, setSaved] = useState(!!st.checkins[cw]);
@@ -24,9 +24,14 @@ export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks }) {
   const handleP = (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    const r = new FileReader();
-    r.onload = (ev) => setSt((s) => ({ ...s, photos: { ...s.photos, [cw]: { ...photos, [pT]: ev.target.result } } }));
-    r.readAsDataURL(f);
+    if (onPhotoUpload) {
+      onPhotoUpload(cw, pT, f);
+    } else {
+      // Fallback to base64 if no upload handler
+      const r = new FileReader();
+      r.onload = (ev) => setSt((s) => ({ ...s, photos: { ...s.photos, [cw]: { ...photos, [pT]: ev.target.result } } }));
+      r.readAsDataURL(f);
+    }
   };
 
   return (
