@@ -64,10 +64,11 @@ function useSupabaseSync(st) {
 }
 
 // ── Main App ─────────────────────────────────────────────────
-export default function App() {
+export default function App({ initialOnboardState }) {
   const { user, signOut } = useAuth();
   const [tab, setTab] = useState("today");
-  const [st, setSt] = useState(() => loadState() || {
+
+  const defaultState = {
     startDate: today(),
     weight: 220,
     weightLog: [],
@@ -82,6 +83,13 @@ export default function App() {
     photos: {},
     mode: "cut",
     programs: [{ name: "12-Week Performance Cut", start: today(), weeks: 12, active: true }],
+  };
+
+  const [st, setSt] = useState(() => {
+    // If coming from onboarding, use that state
+    if (initialOnboardState) return initialOnboardState;
+    // Otherwise load from localStorage or use defaults
+    return loadState() || defaultState;
   });
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [migrating, setMigrating] = useState(false);

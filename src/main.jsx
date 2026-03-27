@@ -1,8 +1,10 @@
-import { StrictMode } from 'react';
+import { StrictMode, useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { supabase } from './lib/supabase.js';
 import App from './App.jsx';
 import LoginScreen from './components/LoginScreen.jsx';
+import OnboardingFlow from './onboarding/OnboardingFlow.jsx';
 import { S } from './lib/styles.js';
 import './index.css';
 
@@ -26,9 +28,49 @@ function SplashScreen() {
 
 function AuthGate() {
   const { user, loading } = useAuth();
-  if (loading) return <SplashScreen />;
+  const [checkingOnboard, setCheckingOnboard] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [onboardState, setOnboardState] = useState(null);
+
+  // Check if user has completed onboarding
+  useEffect(() => {
+    if (!user) {
+      setNeedsOnboarding(false);
+      return;
+    }
+    setCheckingOnboard(true);
+    supabase
+      .from('profiles')
+      .select('onboarded')
+      .eq('id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        // If no profile row or onboarded is false/null → needs onboarding
+        setNeedsOnboarding(!data || !data.onboarded);
+        setCheckingOnboard(false);
+      })
+      .catch(() => {
+        // On error (e.g., table doesn't exist yet), skip onboarding
+        setNeedsOnboarding(false);
+        setCheckingOnboard(false);
+      });
+  }, [user]);
+
+  if (loading || checkingOnboard) return <SplashScreen />;
   if (!user) return <LoginScreen />;
-  return <App />;
+
+  if (needsOnboarding && !onboardState) {
+    return (
+      <OnboardingFlow
+        onComplete={(initialState) => {
+          setOnboardState(initialState);
+          setNeedsOnboarding(false);
+        }}
+      />
+    );
+  }
+
+  return <App initialOnboardState={onboardState} />;
 }
 
 createRoot(document.getElementById('root')).render(
