@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { S } from '../lib/styles';
 import { calcMacros } from '../lib/macros';
 import { FL } from '../data/foods';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import Card from './shared/Card';
 import Label from './shared/Label';
 
 export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }) {
+  const { user } = useAuth();
   const [addTo, setAddTo] = useState(null);
   const [nF, setNF] = useState("");
   const [nG, setNG] = useState("");
@@ -15,6 +18,54 @@ export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals
   const [sF, setSF] = useState("");
   const [sG, setSG] = useState("");
 
+  // ── Meal Template State ──────────────────────────
+  const [templates, setTemplates] = useState([]);
+  const [savingTpl, setSavingTpl] = useState(null); // meal.id being saved
+  const [tplName, setTplName] = useState("");
+  const [insertingTpl, setInsertingTpl] = useState(null); // meal.id being inserted into
+
+  // Load templates on mount
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('meal_templates')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setTemplates(data || []))
+      .catch(() => {});
+  }, [user]);
+
+  // Save template
+  const saveTemplate = async (mealId) => {
+    if (!tplName.trim()) return;
+    const meal = meals.find((m) => m.id === mealId);
+    if (!meal) return;
+    const { data, error } = await supabase.from('meal_templates').insert({
+      user_id: user.id,
+      name: tplName.trim(),
+      foods: meal.foods,
+    }).select().single();
+    if (!error && data) {
+      setTemplates((prev) => [data, ...prev]);
+    }
+    setSavingTpl(null);
+    setTplName("");
+  };
+
+  // Delete template
+  const deleteTemplate = async (tplId) => {
+    await supabase.from('meal_templates').delete().eq('id', tplId);
+    setTemplates((prev) => prev.filter((t) => t.id !== tplId));
+  };
+
+  // Insert template into meal
+  const insertTemplate = (mealId, tpl) => {
+    setMF(mealId, tpl.foods);
+    setInsertingTpl(null);
+  };
+
+  // ── Original meal actions ────────────────────────
   const rm = (mid, fi) => { const m = meals.find((x) => x.id === mid); if (!m) return; const nf = [...m.foods]; nf.splice(fi, 1); setMF(mid, nf); };
   const add = (mid) => { if (!nF || !nG) return; const m = meals.find((x) => x.id === mid); if (!m) return; setMF(mid, [...m.foods, { n: nF, g: parseFloat(nG) || 0 }]); setAddTo(null); setNF(""); setNG(""); };
   const uG = (mid, fi, g) => { const m = meals.find((x) => x.id === mid); if (!m) return; setMF(mid, m.foods.map((f, i) => (i === fi ? { ...f, g: parseFloat(g) || 0 } : f))); };
@@ -46,6 +97,9 @@ export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals
       {/* Each Meal */}
       {meals.map((meal) => {
         const mt = meal.foods.reduce((a, f) => { const m = calcMacros(f.n, f.g); return { p: a.p + m.p, c: a.c + m.c, f: a.f + m.f, cal: a.cal + m.cal }; }, { p: 0, c: 0, f: 0, cal: 0 });
+        const isSaving = savingTpl === meal.id;
+        const isInserting = insertingTpl === meal.id;
+
         return (
           <Card key={meal.id}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -108,7 +162,7 @@ export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals
               <span style={{ color: "#8899b3" }}>{Math.round(mt.cal)} cal</span>
             </div>
 
-            {/* Add Food */}
+            {/* Action row: Add Food | Insert Template | Save as Template */}
             {addTo === meal.id ? (
               <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                 <select value={nF} onChange={(e) => setNF(e.target.value)} style={{ flex: "2 1 120px", background: "#1a2744", border: `1px solid ${S.gr}`, borderRadius: 4, padding: "4px", color: S.tx, fontSize: 10, outline: "none" }}>
@@ -119,10 +173,68 @@ export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals
                 <button onClick={() => add(meal.id)} style={{ background: S.gr, color: S.bg, border: "none", borderRadius: 4, padding: "2px 8px", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>ADD</button>
                 <button onClick={() => setAddTo(null)} style={{ background: S.dr, color: S.dm, border: "none", borderRadius: 4, padding: "2px 6px", fontSize: 9, cursor: "pointer" }}>✕</button>
               </div>
+            ) : isInserting ? (
+              /* Insert Template dropdown */
+              <div style={{ marginTop: 6, padding: 10, background: "rgba(56,145,255,0.04)", border: "1px solid rgba(56,145,255,0.15)", borderRadius: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: S.dm, marginBottom: 6, letterSpacing: 0.5 }}>SELECT TEMPLATE</div>
+                {templates.length === 0 && (
+                  <div style={{ fontSize: 11, color: S.dm, padding: "8px 0" }}>No templates saved yet. Use 💾 to save one.</div>
+                )}
+                {templates.map((tpl) => {
+                  const tplMacros = tpl.foods.reduce((a, f) => { const m = calcMacros(f.n, f.g); return { p: a.p + m.p, c: a.c + m.c, f: a.f + m.f, cal: a.cal + m.cal }; }, { p: 0, c: 0, f: 0, cal: 0 });
+                  return (
+                    <div key={tpl.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <button
+                        onClick={() => insertTemplate(meal.id, tpl)}
+                        style={{
+                          flex: 1, textAlign: "left", padding: "8px 10px",
+                          background: "rgba(56,145,255,0.06)", border: "1px solid rgba(56,145,255,0.12)",
+                          borderRadius: 6, cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, fontWeight: 600, color: S.tx }}>{tpl.name}</div>
+                        <div style={{ fontSize: 9, color: S.dm, marginTop: 2 }}>
+                          {tpl.foods.length} items · {Math.round(tplMacros.cal)} cal · {Math.round(tplMacros.p)}P {Math.round(tplMacros.c)}C {Math.round(tplMacros.f)}F
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => deleteTemplate(tpl.id)}
+                        style={{ background: "rgba(255,71,87,0.08)", border: "none", borderRadius: 4, padding: "4px 6px", fontSize: 9, color: S.rd, cursor: "pointer", fontWeight: 700, flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+                <button onClick={() => setInsertingTpl(null)} style={{ marginTop: 4, width: "100%", background: S.dr, color: S.dm, border: "none", borderRadius: 6, padding: "6px", fontSize: 9, cursor: "pointer", fontWeight: 600 }}>CANCEL</button>
+              </div>
+            ) : isSaving ? (
+              /* Save as Template name input */
+              <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                <input
+                  value={tplName}
+                  onChange={(e) => setTplName(e.target.value)}
+                  placeholder="Template name..."
+                  autoFocus
+                  style={{ flex: 1, background: "#1a2744", border: `1px solid ${S.am}`, borderRadius: 4, padding: "6px 8px", color: S.tx, fontSize: 11, outline: "none" }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveTemplate(meal.id); }}
+                />
+                <button onClick={() => saveTemplate(meal.id)} disabled={!tplName.trim()} style={{ background: tplName.trim() ? S.am : '#1a2744', color: tplName.trim() ? S.bg : S.dm, border: "none", borderRadius: 4, padding: "2px 10px", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>SAVE</button>
+                <button onClick={() => { setSavingTpl(null); setTplName(""); }} style={{ background: S.dr, color: S.dm, border: "none", borderRadius: 4, padding: "2px 6px", fontSize: 9, cursor: "pointer" }}>✕</button>
+              </div>
             ) : (
-              <button onClick={() => setAddTo(meal.id)} style={{ marginTop: 6, width: "100%", background: "rgba(0,212,170,0.06)", border: "1px dashed rgba(0,212,170,0.2)", borderRadius: 6, padding: "6px", fontSize: 10, color: S.gr, fontWeight: 700, cursor: "pointer" }}>
-                + ADD FOOD
-              </button>
+              /* Default: three action buttons */
+              <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                <button onClick={() => setAddTo(meal.id)} style={{ flex: 1, background: "rgba(0,212,170,0.06)", border: "1px dashed rgba(0,212,170,0.2)", borderRadius: 6, padding: "6px", fontSize: 10, color: S.gr, fontWeight: 700, cursor: "pointer" }}>
+                  + FOOD
+                </button>
+                <button onClick={() => setInsertingTpl(meal.id)} style={{ flex: 1, background: "rgba(56,145,255,0.06)", border: "1px dashed rgba(56,145,255,0.2)", borderRadius: 6, padding: "6px", fontSize: 10, color: S.bl, fontWeight: 700, cursor: "pointer" }}>
+                  📋 TEMPLATE
+                </button>
+                <button onClick={() => setSavingTpl(meal.id)} style={{ background: "rgba(245,166,35,0.06)", border: "1px dashed rgba(245,166,35,0.2)", borderRadius: 6, padding: "6px 10px", fontSize: 10, color: S.am, fontWeight: 700, cursor: "pointer" }}>
+                  💾
+                </button>
+              </div>
             )}
           </Card>
         );
