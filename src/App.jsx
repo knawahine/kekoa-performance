@@ -194,7 +194,30 @@ export default function App({ initialOnboardState }) {
     const newProg = { name, start: today(), weeks: parseInt(weeks) || 0, active: true };
     setSt((s) => ({ ...s, mode: weeks > 0 ? "cut" : "maintenance", programs: (s.programs || []).map((p) => ({ ...p, active: false })).concat(newProg) }));
   };
-  const goMaintenance = () => setSt((s) => ({ ...s, mode: "maintenance" }));
+  const goMaintenance = () => {
+    setSt((s) => ({
+      ...s,
+      mode: "maintenance",
+      programs: (s.programs || []).map((p) =>
+        p.active ? { ...p, paused: true } : p
+      ),
+    }));
+  };
+
+  const resumeProgram = () => {
+    setSt((s) => ({
+      ...s,
+      mode: "cut",
+      programs: (s.programs || []).map((p) =>
+        p.active && p.paused ? { ...p, paused: false } : p
+      ),
+    }));
+  };
+
+  // Find the paused program (if any) for the resume button
+  const pausedProg = st.mode === "maintenance"
+    ? (st.programs || []).find((p) => p.active && p.paused)
+    : null;
 
   const updateStartDate = (newDate) => {
     if (!newDate) return;
@@ -286,7 +309,7 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}

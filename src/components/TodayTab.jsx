@@ -6,11 +6,13 @@ import MacroBar from './shared/MacroBar';
 import StreakDashboard from './StreakDashboard';
 import { SUPPS } from '../data/supplements';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
+  const [confirmMaint, setConfirmMaint] = useState(false);
   const programDone = isCut && cappedWk >= totalWks;
+  const activeProg = st.programs?.find((p) => p.active);
 
   return (
     <>
@@ -21,7 +23,7 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
             Your {totalWks}-week cut is done. What's next?
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={goMaintenance} style={{ flex: 1, background: "rgba(0,212,170,0.12)", border: "1px solid rgba(0,212,170,0.3)", color: S.gr, borderRadius: 8, padding: "10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>MAINTENANCE MODE</button>
+            <button onClick={() => { goMaintenance(); }} style={{ flex: 1, background: "rgba(0,212,170,0.12)", border: "1px solid rgba(0,212,170,0.3)", color: S.gr, borderRadius: 8, padding: "10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>MAINTENANCE MODE</button>
             <button onClick={() => setShowMode(true)} style={{ flex: 1, background: "rgba(56,145,255,0.12)", border: "1px solid rgba(56,145,255,0.3)", color: S.bl, borderRadius: 8, padding: "10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>NEW PROGRAM</button>
           </div>
         </Card>
@@ -139,11 +141,51 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
           </div>
 
           <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, marginBottom: 6, letterSpacing: 1 }}>PROGRAM MODE</div>
-          <button onClick={goMaintenance} style={{ width: "100%", background: st.mode === "maintenance" ? "rgba(0,212,170,0.1)" : "transparent", border: `1px solid ${st.mode === "maintenance" ? "rgba(0,212,170,0.3)" : S.bd}`, borderRadius: 8, padding: "10px", marginBottom: 6, cursor: "pointer", textAlign: "left" }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: st.mode === "maintenance" ? S.gr : S.tx }}>Maintenance Mode</div>
-            <div style={{ fontSize: 10, color: S.dm }}>No end date. Track meals, training, recovery indefinitely.</div>
-          </button>
-          <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, margin: "8px 0 6px", letterSpacing: 1 }}>OR START A NEW PROGRAM:</div>
+
+          {/* Resume paused program */}
+          {pausedProg && st.mode === "maintenance" && (() => {
+            const pausedWk = Math.max(1, Math.floor((new Date() - new Date(pausedProg.start)) / 604800000) + 1);
+            const pausedCapped = Math.min(pausedWk, pausedProg.weeks || pausedWk);
+            return (
+              <button onClick={resumeProgram} style={{ width: "100%", background: "rgba(56,145,255,0.08)", border: "1px solid rgba(56,145,255,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 6, cursor: "pointer", textAlign: "left" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.bl }}>Resume Program</div>
+                <div style={{ fontSize: 10, color: "#c8c4bb", marginTop: 2 }}>{pausedProg.name} — Week {pausedCapped}{pausedProg.weeks ? ` of ${pausedProg.weeks}` : ''}</div>
+              </button>
+            );
+          })()}
+
+          {/* Switch to maintenance */}
+          {isCut && !confirmMaint && (
+            <button onClick={() => setConfirmMaint(true)} style={{ width: "100%", background: "transparent", border: `1px solid ${S.bd}`, borderRadius: 8, padding: "10px", marginBottom: 6, cursor: "pointer", textAlign: "left" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: S.tx }}>Switch to Maintenance</div>
+              <div style={{ fontSize: 10, color: S.dm }}>Pause your program and track indefinitely.</div>
+            </button>
+          )}
+
+          {/* Already in maintenance */}
+          {st.mode === "maintenance" && !pausedProg && (
+            <div style={{ width: "100%", background: "rgba(0,212,170,0.06)", border: "1px solid rgba(0,212,170,0.2)", borderRadius: 8, padding: "10px", marginBottom: 6, textAlign: "left" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: S.gr }}>Maintenance Mode Active</div>
+              <div style={{ fontSize: 10, color: S.dm }}>No end date. Tracking meals, training, recovery.</div>
+            </div>
+          )}
+
+          {/* Confirmation dialog */}
+          {confirmMaint && (
+            <div style={{ background: "rgba(245,166,35,0.06)", border: "1px solid rgba(245,166,35,0.2)", borderRadius: 8, padding: "12px", marginBottom: 6 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: S.am, marginBottom: 6 }}>⚠️ Pause Program?</div>
+              <div style={{ fontSize: 11, color: "#c8c4bb", lineHeight: 1.5, marginBottom: 10 }}>
+                You are on <strong style={{ color: "#fff" }}>Week {cappedWk}</strong> of <strong style={{ color: "#fff" }}>{activeProg?.name || 'your program'}</strong>.
+                Switching to Maintenance will pause your program. You can resume it anytime.
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setConfirmMaint(false)} style={{ flex: 1, background: "rgba(255,255,255,0.04)", border: `1px solid ${S.bd}`, color: S.dm, borderRadius: 6, padding: "8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>CANCEL</button>
+                <button onClick={() => { goMaintenance(); setConfirmMaint(false); }} style={{ flex: 1, background: "rgba(245,166,35,0.15)", border: "1px solid rgba(245,166,35,0.3)", color: S.am, borderRadius: 6, padding: "8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>PAUSE & SWITCH</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, margin: "8px 0 6px", letterSpacing: 1 }}>START A NEW PROGRAM:</div>
           <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Program name (e.g. 8-Week Bulk)" style={{ width: "100%", background: "#1a2744", border: `1px solid ${S.bd}`, borderRadius: 6, padding: "8px 10px", color: S.tx, fontSize: 12, marginBottom: 6, outline: "none", boxSizing: "border-box" }} />
           <div style={{ display: "flex", gap: 6 }}>
             <input type="number" value={newWks} onChange={(e) => setNewWks(e.target.value)} placeholder="Weeks (0=no end)" style={{ flex: 1, background: "#1a2744", border: `1px solid ${S.bd}`, borderRadius: 6, padding: "8px 10px", color: S.tx, fontSize: 12, outline: "none" }} />
