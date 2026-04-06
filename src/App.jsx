@@ -209,14 +209,15 @@ export default function App({ initialOnboardState }) {
       ...s,
       mode: "cut",
       programs: (s.programs || []).map((p) =>
-        p.active && p.paused ? { ...p, paused: false } : p
+        p.active ? { ...p, paused: false } : p
       ),
     }));
   };
 
-  // Find the paused program (if any) for the resume button
+  // Find a resumable program: active with weeks > 0 while in maintenance
+  // (supports both new paused flag AND legacy programs that were paused before the flag existed)
   const pausedProg = st.mode === "maintenance"
-    ? (st.programs || []).find((p) => p.active && p.paused)
+    ? (st.programs || []).find((p) => p.active && p.weeks > 0)
     : null;
 
   const updateStartDate = (newDate) => {
