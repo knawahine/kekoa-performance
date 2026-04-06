@@ -288,7 +288,7 @@ export default function App({ initialOnboardState }) {
       <div style={{ padding: "14px 14px 0" }}>
         {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
-        {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx }} />}
+        {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}
         {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks, onPhotoUpload: handlePhotoUpload, weeklyConsistency, personalBests: st.personalBests }} />}
         {tab === "review" && <ReviewTab st={st} startDate={activeProg.start} maxWk={cappedWk} />}

@@ -1,16 +1,50 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { S } from '../lib/styles';
 import { SPLIT, WK } from '../data/workouts';
 import Card from './shared/Card';
 import Label from './shared/Label';
 import SetLogger from './SetLogger';
 
-export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx }) {
+/**
+ * Find the most recent exercise logs for a given exercise key on the same day of the week.
+ * Scans allExLogs (keyed by date) backward, looking for dates that fall on the same weekday.
+ * Returns the sets object (e.g. {0: {w: "185", r: "8"}, 1: {w: "185", r: "6"}}) or {}.
+ */
+function findPrevLogs(allExLogs, exerciseKey, todayStr) {
+  if (!allExLogs) return {};
+
+  // Get all dates that have logs, sorted descending (most recent first)
+  const dates = Object.keys(allExLogs)
+    .filter((d) => d < todayStr) // Only past dates
+    .sort((a, b) => b.localeCompare(a));
+
+  for (const date of dates) {
+    const dayLogs = allExLogs[date];
+    if (dayLogs && dayLogs[exerciseKey]) {
+      return dayLogs[exerciseKey];
+    }
+  }
+  return {};
+}
+
+export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx, allExLogs, todayStr }) {
   const [vd, setVd] = useState(dsi);
   const sp = SPLIT[vd];
   const exs = WK[vd] || [];
   const has = exs.length > 0;
   const pN = ["Foundation & Volume", "Intensity & Density", "Peak Performance"];
+
+  // Pre-compute previous logs for all exercises on the viewed day
+  const prevLogsMap = useMemo(() => {
+    const map = {};
+    if (!has) return map;
+    for (const ex of exs) {
+      if (ex.wu) continue;
+      const key = `${vd}-${ex.id}`;
+      map[key] = findPrevLogs(allExLogs, key, todayStr);
+    }
+    return map;
+  }, [allExLogs, vd, todayStr, has]);
 
   return (
     <>
@@ -50,7 +84,10 @@ export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx }) {
         const rps = typeof ex.rp === "object" ? ex.rp[pk] : ex.rp;
         const sts = typeof ex.st === "object" ? ex.st[pk] : ex.st;
         const nS = parseInt(sts) || 4;
-        const logs = exLogs[`${vd}-${ex.id}`] || {};
+        const exerciseKey = `${vd}-${ex.id}`;
+        const logs = exLogs[exerciseKey] || {};
+        const prevSets = prevLogsMap[exerciseKey] || {};
+
         return (
           <Card key={ex.id} style={ex.ach ? { border: "1px solid rgba(245,166,35,0.25)", background: "rgba(245,166,35,0.04)" } : {}}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -62,7 +99,13 @@ export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx }) {
             {ex.prog && <div style={{ fontSize: 10, color: S.bl, marginBottom: 4 }}>↗ {ex.prog}</div>}
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {Array.from({ length: nS }, (_, i) => (
-                <SetLogger key={i} idx={i} log={logs[i]} onSave={(data) => logEx(vd, ex.id, i, data)} />
+                <SetLogger
+                  key={i}
+                  idx={i}
+                  log={logs[i]}
+                  prevLog={prevSets[i]}
+                  onSave={(data) => logEx(vd, ex.id, i, data)}
+                />
               ))}
             </div>
           </Card>
