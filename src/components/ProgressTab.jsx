@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { S } from '../lib/styles';
 import { CK_FIELDS } from '../data/rehab';
 import Card from './shared/Card';
@@ -7,10 +7,52 @@ import WeeklyConsistencyChart from './WeeklyConsistencyChart';
 
 export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhotoUpload, weeklyConsistency, personalBests }) {
   const [wIn, setWIn] = useState("");
-  const [form, setForm] = useState(st.checkins[cw] || {});
-  const [saved, setSaved] = useState(!!st.checkins[cw]);
   const fR = useRef();
   const [pT, setPT] = useState("front");
+
+  // ── Auto-populate check-in form ──────────────────────
+  const prevCheckin = st.checkins[cw - 1] || {};
+
+  // Auto-calculate weeksLeft
+  const autoWeeksLeft = isCut ? String(Math.max(0, totalWks - cw)) : "N/A";
+
+  // Auto-calculate weightChange: current weight vs previous week's weight
+  const autoWeightChange = useMemo(() => {
+    const thisWeekWeight = st.weight;
+    // Find a weight entry from roughly last week (5+ days ago)
+    const prevWeekWeightEntry = [...(st.weightLog || [])]
+      .sort((a, b) => b.d.localeCompare(a.d))
+      .find((e) => {
+        const daysAgo = (new Date() - new Date(e.d)) / 86400000;
+        return daysAgo >= 5;
+      });
+
+    if (prevWeekWeightEntry && thisWeekWeight) {
+      const diff = thisWeekWeight - prevWeekWeightEntry.w;
+      const sign = diff >= 0 ? "+" : "";
+      return `${sign}${diff.toFixed(1)} lbs`;
+    }
+    return "";
+  }, [st.weight, st.weightLog]);
+
+  // Build initial form: saved data > auto-calculated > previous week's data
+  const [form, setForm] = useState(() => {
+    const existing = st.checkins[cw];
+    if (existing) return existing;
+
+    const prefilled = {};
+    for (const field of CK_FIELDS) {
+      if (field.k === "weeksLeft") {
+        prefilled[field.k] = autoWeeksLeft;
+      } else if (field.k === "weightChange") {
+        prefilled[field.k] = autoWeightChange;
+      } else if (prevCheckin[field.k]) {
+        prefilled[field.k] = prevCheckin[field.k];
+      }
+    }
+    return prefilled;
+  });
+  const [saved, setSaved] = useState(!!st.checkins[cw]);
 
   const logW = () => {
     const w = parseFloat(wIn);
@@ -28,11 +70,17 @@ export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhoto
     if (onPhotoUpload) {
       onPhotoUpload(cw, pT, f);
     } else {
-      // Fallback to base64 if no upload handler
       const r = new FileReader();
       r.onload = (ev) => setSt((s) => ({ ...s, photos: { ...s.photos, [cw]: { ...photos, [pT]: ev.target.result } } }));
       r.readAsDataURL(f);
     }
+  };
+
+  // Show "AUTO" tag for fields that were auto-populated (not yet saved by user)
+  const isAuto = (key) => {
+    if (st.checkins[cw]?.[key]) return false;
+    if (key === "weeksLeft" || key === "weightChange") return !!form[key];
+    return !!prevCheckin[key] && form[key] === prevCheckin[key];
   };
 
   return (
@@ -94,9 +142,19 @@ export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhoto
       {/* Weekly Check-In */}
       <Card>
         <Label>WEEK {cw} CHECK-IN</Label>
+        {!saved && Object.keys(prevCheckin).length > 0 && (
+          <div style={{ fontSize: 9, color: S.dm, marginBottom: 8, padding: "4px 8px", background: "rgba(56,145,255,0.04)", borderRadius: 4 }}>
+            Pre-filled from Week {cw - 1}. Edit any field to update.
+          </div>
+        )}
         {CK_FIELDS.map((f) => (
           <div key={f.k} style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: S.dm, marginBottom: 3, letterSpacing: 0.5 }}>{f.l}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: S.dm, letterSpacing: 0.5 }}>{f.l}</div>
+              {!saved && isAuto(f.k) && (
+                <span style={{ fontSize: 7, color: S.bl, fontWeight: 600, letterSpacing: 0.5 }}>AUTO</span>
+              )}
+            </div>
             {saved ? (
               <div style={{ fontSize: 12, color: "#c8c4bb", padding: "6px 8px", background: "rgba(0,212,170,0.04)", borderRadius: 6, minHeight: 20 }}>{form[f.k] || "—"}</div>
             ) : (
@@ -104,7 +162,21 @@ export default function ProgressTab({ st, setSt, cw, d, isCut, totalWks, onPhoto
                 type={f.t === "number" ? "number" : "text"}
                 value={form[f.k] || ""}
                 onChange={(e) => setForm({ ...form, [f.k]: e.target.value })}
-                style={{ width: "100%", background: "#1a2744", border: "1px solid rgba(56,145,255,0.12)", borderRadius: 6, padding: "8px 10px", color: S.tx, fontSize: 12, outline: "none", boxSizing: "border-box" }}
+                placeholder={
+                  f.k === "weeksLeft" ? (isCut ? `${Math.max(0, totalWks - cw)} weeks` : "N/A") :
+                  f.k === "weightChange" ? "e.g. -1.5 lbs" :
+                  undefined
+                }
+                style={{
+                  width: "100%", background: "#1a2744",
+                  border: `1px solid ${isAuto(f.k) ? "rgba(56,145,255,0.2)" : "rgba(56,145,255,0.12)"}`,
+                  borderRadius: 6, padding: "8px 10px",
+                  color: isAuto(f.k) ? "rgba(232,230,225,0.6)" : S.tx,
+                  fontSize: 12, outline: "none", boxSizing: "border-box",
+                }}
+                onFocus={(e) => {
+                  if (isAuto(f.k)) e.target.select();
+                }}
               />
             )}
           </div>
