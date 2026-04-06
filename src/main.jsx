@@ -8,6 +8,13 @@ import OnboardingFlow from './onboarding/OnboardingFlow.jsx';
 import { S } from './lib/styles.js';
 import './index.css';
 
+// Force reload when service worker updates
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
+}
+
 function SplashScreen() {
   return (
     <div style={{
