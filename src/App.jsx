@@ -196,6 +196,17 @@ export default function App({ initialOnboardState }) {
   };
   const goMaintenance = () => setSt((s) => ({ ...s, mode: "maintenance" }));
 
+  const updateStartDate = (newDate) => {
+    if (!newDate) return;
+    setSt((s) => ({
+      ...s,
+      startDate: newDate,
+      programs: (s.programs || []).map((p) =>
+        p.active ? { ...p, start: newDate } : p
+      ),
+    }));
+  };
+
   // ── Gamification: Streaks, Consistency, Personal Bests ─────
   const streaks = useMemo(() => calcStreaks(st), [st.mealChecks, st.exLogs, st.suppChecks, st.streakFreezes]);
   const weeklyConsistency = useMemo(() => calcWeeklyConsistency(st, 8), [st.mealChecks, st.exLogs, st.suppChecks]);
@@ -275,7 +286,7 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}

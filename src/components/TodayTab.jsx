@@ -6,7 +6,7 @@ import MacroBar from './shared/MacroBar';
 import StreakDashboard from './StreakDashboard';
 import { SUPPS } from '../data/supplements';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests, onToggleFreeze }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
@@ -115,7 +115,30 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
       )}
       {showMode && (
         <Card>
-          <Label>PROGRAM MODE</Label>
+          <Label>PROGRAM SETTINGS</Label>
+
+          {/* Start Date Editor */}
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(56,145,255,0.04)", border: "1px solid rgba(56,145,255,0.12)", borderRadius: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, marginBottom: 4, letterSpacing: 0.5 }}>PROGRAM START DATE</div>
+            <input
+              type="date"
+              value={activeProgramStart || ''}
+              onChange={(e) => onUpdateStartDate(e.target.value)}
+              style={{
+                width: "100%", background: "#1a2744",
+                border: "1px solid rgba(56,145,255,0.2)",
+                borderRadius: 6, padding: "8px 10px",
+                color: S.tx, fontSize: 13, outline: "none",
+                boxSizing: "border-box",
+                colorScheme: "dark",
+              }}
+            />
+            <div style={{ fontSize: 9, color: S.dm, marginTop: 4 }}>
+              Week {cappedWk}{isCut ? ` of ${totalWks}` : ''} — changing this recalculates everything
+            </div>
+          </div>
+
+          <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, marginBottom: 6, letterSpacing: 1 }}>PROGRAM MODE</div>
           <button onClick={goMaintenance} style={{ width: "100%", background: st.mode === "maintenance" ? "rgba(0,212,170,0.1)" : "transparent", border: `1px solid ${st.mode === "maintenance" ? "rgba(0,212,170,0.3)" : S.bd}`, borderRadius: 8, padding: "10px", marginBottom: 6, cursor: "pointer", textAlign: "left" }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: st.mode === "maintenance" ? S.gr : S.tx }}>Maintenance Mode</div>
             <div style={{ fontSize: 10, color: S.dm }}>No end date. Track meals, training, recovery indefinitely.</div>
