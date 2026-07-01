@@ -1,16 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { S } from '../lib/styles';
 import Card from './shared/Card';
 import Label from './shared/Label';
 import MacroBar from './shared/MacroBar';
 import StreakDashboard from './StreakDashboard';
-import { SUPPS } from '../data/supplements';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps = [], isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart, onImportProgram }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
   const [confirmMaint, setConfirmMaint] = useState(false);
+  const fileRef = useRef(null);
   const programDone = isCut && cappedWk >= totalWks;
   const activeProg = st.programs?.find((p) => p.active);
 
@@ -91,8 +91,8 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
 
       {/* Supplements Checklist */}
       <Card>
-        <Label>SUPPLEMENTS — {sH}/{SUPPS.length}</Label>
-        {SUPPS.map((s, i) => (
+        <Label>SUPPLEMENTS — {sH}/{supps.length}</Label>
+        {supps.map((s, i) => (
           <button
             key={i}
             onClick={() => tSupp(i)}
@@ -118,6 +118,26 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
       {showMode && (
         <Card>
           <Label>PROGRAM SETTINGS</Label>
+
+          {/* Import Program from PDF */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f && onImportProgram) onImportProgram(f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            style={{ width: "100%", background: "rgba(56,145,255,0.08)", border: "1px solid rgba(56,145,255,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 12, cursor: "pointer", textAlign: "left" }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: S.bl }}>📄 Import Program from PDF</div>
+            <div style={{ fontSize: 10, color: "#c8c4bb", marginTop: 2 }}>Upload a training PDF — Claude extracts workouts, meals & macros.</div>
+          </button>
 
           {/* Start Date Editor */}
           <div style={{ marginBottom: 12, padding: "10px 12px", background: "rgba(56,145,255,0.04)", border: "1px solid rgba(56,145,255,0.12)", borderRadius: 8 }}>

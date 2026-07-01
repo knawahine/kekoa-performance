@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { S } from '../lib/styles';
-import { SPLIT, WK } from '../data/workouts';
+import { SPLIT as DEFAULT_SPLIT, WK as DEFAULT_WK } from '../data/workouts';
 import Card from './shared/Card';
 import Label from './shared/Label';
 import SetLogger from './SetLogger';
@@ -27,7 +27,7 @@ function findPrevLogs(allExLogs, exerciseKey, todayStr) {
   return {};
 }
 
-export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx, allExLogs, todayStr }) {
+export default function TrainingTab({ si: dsi, pk, ph, cw, exLogs, logEx, allExLogs, todayStr, SPLIT = DEFAULT_SPLIT, WK = DEFAULT_WK }) {
   const [vd, setVd] = useState(dsi);
   const sp = SPLIT[vd];
   const exs = WK[vd] || [];

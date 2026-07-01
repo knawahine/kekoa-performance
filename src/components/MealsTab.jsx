@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { S } from '../lib/styles';
-import { calcMacros } from '../lib/macros';
-import { FL } from '../data/foods';
+import { calcMacrosWith } from '../lib/macros';
+import { FDB as DEFAULT_FDB } from '../data/foods';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import Card from './shared/Card';
 import Label from './shared/Label';
 
-export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }) {
+export default function MealsTab({ meals, tgt, mc, tMeal, isTr, setMF, baseMeals, foodMap = DEFAULT_FDB }) {
+  // Compute macros and the food dropdown list from the (possibly imported) food map.
+  const calcMacros = (n, g) => calcMacrosWith(foodMap, n, g);
+  const FL = useMemo(() => Object.keys(foodMap).sort(), [foodMap]);
   const { user } = useAuth();
   const [addTo, setAddTo] = useState(null);
   const [nF, setNF] = useState("");

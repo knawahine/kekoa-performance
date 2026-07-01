@@ -1,22 +1,22 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { S } from './lib/styles';
 import { today, loadState, saveState, getPhase, getPhaseKey, loadRemoteState } from './lib/helpers';
-import { calcMacros } from './lib/macros';
+import { calcMacrosWith } from './lib/macros';
 import { supabase } from './lib/supabase';
 import { useAuth } from './context/AuthContext';
 import { createSyncEngine, diffState } from './lib/sync';
 import { compressImage, uploadPhoto } from './lib/photos';
 import { migrateLocalToSupabase, isMigrated } from './lib/migrate';
 import { calcStreaks, calcWeeklyConsistency, updatePersonalBests } from './lib/streaks';
-import { SPLIT } from './data/workouts';
-import { TM, OM, TGT } from './data/meals';
-import { SUPPS } from './data/supplements';
+import { resolveProgramData } from './lib/activeProgram';
+import { loadImportedData } from './lib/programImport';
 import TodayTab from './components/TodayTab';
 import MealsTab from './components/MealsTab';
 import TrainingTab from './components/TrainingTab';
 import RehabTab from './components/RehabTab';
 import ProgressTab from './components/ProgressTab';
 import ReviewTab from './components/ReviewTab';
+import ProgramImportModal from './components/ProgramImportModal';
 
 // ── Supabase Sync Hook ──────────────────────────────────────
 function useSupabaseSync(st) {
@@ -95,6 +95,11 @@ export default function App({ initialOnboardState }) {
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [migrating, setMigrating] = useState(false);
 
+  // Imported-program data (split/meals/macros/foods) for the active program,
+  // and the PDF file currently being imported (drives the import modal).
+  const [importedData, setImportedData] = useState(null);
+  const [importFile, setImportFile] = useState(null);
+
   // Save to localStorage on every change (existing behavior)
   useEffect(() => { saveState(st); }, [st]);
 
@@ -127,6 +132,17 @@ export default function App({ initialOnboardState }) {
       });
   }, [user, remoteLoaded]);
 
+  // Load imported program data from DB when the active program is an import.
+  useEffect(() => {
+    if (!user) return;
+    const active = st.programs?.find((p) => p.active);
+    if (active?.imported && !importedData) {
+      loadImportedData(user.id, active.name).then((data) => {
+        if (data) setImportedData(data);
+      });
+    }
+  }, [user, st.programs, importedData]);
+
   // ── Photo upload handler (compress → Supabase Storage) ─────
   const handlePhotoUpload = async (weekNum, angle, file) => {
     try {
@@ -150,13 +166,18 @@ export default function App({ initialOnboardState }) {
   const cw = Math.max(1, Math.floor((new Date() - new Date(activeProg.start)) / 604800000) + 1);
   const cappedWk = isCut ? Math.min(cw, activeProg.weeks || 12) : cw;
   const totalWks = isCut ? (activeProg.weeks || 12) : cw;
-  const split = SPLIT[si];
+
+  // Resolve program data: imported program (when active) overrides built-in defaults.
+  const PD = useMemo(() => resolveProgramData(activeProg, importedData), [activeProg, importedData]);
+  const calcMacros = (n, g) => calcMacrosWith(PD.FDB, n, g);
+
+  const split = PD.SPLIT[si];
   const isTr = split.type === "training";
   const ph = getPhase(Math.min(cappedWk, 12));
   const pk = getPhaseKey(Math.min(cappedWk, 12));
-  const tgt = isTr ? TGT.tr : TGT.off;
+  const tgt = isTr ? PD.TGT.tr : PD.TGT.off;
 
-  const baseMeals = isTr ? TM : OM;
+  const baseMeals = isTr ? PD.TM : PD.OM;
   const meals = useMemo(() => {
     const ov = st.mealOverrides[d];
     if (!ov) return baseMeals;
@@ -185,8 +206,8 @@ export default function App({ initialOnboardState }) {
   const tMeal = (id) => setSt((s) => ({ ...s, mealChecks: { ...s.mealChecks, [d]: { ...mc, [id]: !mc[id] } } }));
   const tSupp = (i) => setSt((s) => ({ ...s, suppChecks: { ...s.suppChecks, [d]: { ...sc, [i]: !sc[i] } } }));
   const mH = meals.filter((m) => mc[m.id]).length;
-  const sH = SUPPS.filter((_, i) => sc[i]).length;
-  const score = Math.round((mH / meals.length) * 70 + (sH / SUPPS.length) * 30);
+  const sH = PD.SUPPS.filter((_, i) => sc[i]).length;
+  const score = Math.round((mH / meals.length) * 70 + (sH / (PD.SUPPS.length || 1)) * 30);
   const setMF = (mid, foods) => setSt((s) => ({ ...s, mealOverrides: { ...s.mealOverrides, [d]: { ...s.mealOverrides[d], [mid]: foods } } }));
   const logEx = (day, eid, si2, data) => setSt((s) => ({ ...s, exLogs: { ...s.exLogs, [d]: { ...s.exLogs[d], [`${day}-${eid}`]: { ...s.exLogs[d]?.[`${day}-${eid}`], [si2]: data } } } }));
 
@@ -229,6 +250,23 @@ export default function App({ initialOnboardState }) {
         p.active ? { ...p, start: newDate } : p
       ),
     }));
+  };
+
+  // ── Program Import ─────────────────────────────────────────
+  const handleImportProgram = (file) => setImportFile(file);
+
+  const handleImported = (programPayload, newImportedData) => {
+    setImportedData(newImportedData);
+    setSt((s) => ({
+      ...s,
+      mode: programPayload.weeks > 0 ? "cut" : "maintenance",
+      startDate: programPayload.start,
+      programs: (s.programs || [])
+        .map((p) => ({ ...p, active: false }))
+        .concat(programPayload),
+    }));
+    setImportFile(null);
+    setTab("today");
   };
 
   // ── Gamification: Streaks, Consistency, Personal Bests ─────
@@ -310,9 +348,9 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start }} />}
-        {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals }} />}
-        {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps: PD.SUPPS, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start, onImportProgram: handleImportProgram }} />}
+        {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals, foodMap: PD.FDB }} />}
+        {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d, SPLIT: PD.SPLIT, WK: PD.WK }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}
         {tab === "progress" && <ProgressTab {...{ st, setSt, cw: cappedWk, d, isCut, totalWks, onPhotoUpload: handlePhotoUpload, weeklyConsistency, personalBests: st.personalBests }} />}
         {tab === "review" && <ReviewTab st={st} startDate={activeProg.start} maxWk={cappedWk} />}
@@ -346,6 +384,15 @@ export default function App({ initialOnboardState }) {
           </button>
         ))}
       </div>
+
+      {/* Program Import Modal */}
+      {importFile && (
+        <ProgramImportModal
+          file={importFile}
+          onClose={() => setImportFile(null)}
+          onImported={handleImported}
+        />
+      )}
     </div>
   );
 }
