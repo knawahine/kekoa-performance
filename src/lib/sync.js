@@ -57,6 +57,7 @@ export function createSyncEngine(userId) {
       start_date: p.start,
       weeks: p.weeks,
       active: p.active,
+      imported: p.imported || false,
     }));
     if (rows.length) {
       const { error } = await supabase.from('programs').insert(rows);

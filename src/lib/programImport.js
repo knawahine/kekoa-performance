@@ -295,6 +295,7 @@ export async function saveImportedProgram({ userId, programName, weeks, parsed, 
     start_date: start,
     weeks: wk,
     active: true,
+    imported: true,
   });
   if (progErr) throw new Error('Saving program failed: ' + progErr.message);
 

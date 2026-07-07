@@ -60,6 +60,7 @@ export async function loadRemoteState(supabase, userId) {
       start: p.start_date,
       weeks: p.weeks,
       active: p.active,
+      imported: p.imported || false,
     })),
     weightLog: (dailyLogs || [])
       .filter((d) => d.weight != null)
