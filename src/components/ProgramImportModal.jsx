@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { S } from '../lib/styles';
 import { useAuth } from '../context/AuthContext';
-import { parseProgramPdf, saveImportedProgram, toAppProgramData, userFoodsToMap } from '../lib/programImport';
+import { parseProgramPdf, saveImportedProgram } from '../lib/programImport';
 import Card from './shared/Card';
 import Label from './shared/Label';
 
@@ -91,17 +91,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
         parsed,
         verifiedFoods,
       });
-      const userFoodMap = userFoodsToMap(
-        verifiedFoods.map((f) => ({
-          name: f.name,
-          protein_per_100g: Number(f.protein_per_100g) || 0,
-          carbs_per_100g: Number(f.carbs_per_100g) || 0,
-          fat_per_100g: Number(f.fat_per_100g) || 0,
-          cal_per_100g: Number(f.cal_per_100g) || 0,
-        }))
-      );
-      const importedData = toAppProgramData(parsed, userFoodMap);
-      onImported(programPayload, importedData);
+      onImported(programPayload);
     } catch (err) {
       setError(err.message || 'Failed to save program.');
       setPhase('error');

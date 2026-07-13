@@ -161,153 +161,63 @@ export function toAppProgramData(parsed, userFoodMap = {}) {
   };
 }
 
-// ── Load saved imported data for the active program ──────────
-// Rebuilds the in-memory bundle (split/wk/meals/targets/supps/foods) from the
-// user's custom_splits / custom_meals / user_foods rows for a given program name.
-export async function loadImportedData(userId, programName) {
-  if (!userId || !programName) return null;
+// A stable client-generated id (uuid where available).
+function newId() {
   try {
-    const [{ data: splits }, { data: customMeals }, { data: foods }] = await Promise.all([
-      supabase.from('custom_splits').select('*').eq('user_id', userId).eq('name', programName).eq('is_template', false).order('created_at', { ascending: false }),
-      supabase.from('custom_meals').select('*').eq('user_id', userId).eq('name', programName).eq('is_template', false).order('created_at', { ascending: false }),
-      supabase.from('user_foods').select('*').eq('user_id', userId),
-    ]);
-
-    const splitRow = (splits || [])[0];
-    const training = (customMeals || []).find((m) => m.type === 'training');
-    const off = (customMeals || []).find((m) => m.type === 'off');
-    const foodMap = userFoodsToMap(foods || []);
-
-    if (!splitRow && !training && !off) return null;
-
-    return {
-      split: splitRow?.days || null,
-      wk: splitRow?.exercises || null,
-      trainingMeals: training?.meals || null,
-      offMeals: off?.meals || null,
-      targets:
-        training?.targets || off?.targets
-          ? { tr: training?.targets || off?.targets || {}, off: off?.targets || training?.targets || {} }
-          : null,
-      supps: training?.supplements || off?.supplements || null,
-      foods: foodMap,
-    };
-  } catch (err) {
-    console.warn('[import] loadImportedData failed:', err.message);
-    return null;
-  }
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  } catch { /* ignore */ }
+  return `imp-${today()}-${Math.round(performance.now())}`;
 }
 
-// ── Persist to Supabase ──────────────────────────────────────
+// ── Build a self-contained program object ────────────────────
+// The returned object is added to app state and persisted (via the normal
+// programs sync) as a single self-contained row: everything the tabs need
+// lives on `.data`, so nothing has to be re-joined by name on reload.
+//
 // verifiedFoods: array of { name, protein_per_100g, carbs_per_100g, fat_per_100g, cal_per_100g }
 export async function saveImportedProgram({ userId, programName, weeks, parsed, verifiedFoods }) {
   const name = programName || 'Imported Program';
   const wk = parseInt(weeks) || 0;
-
-  // 1. Save unknown foods to user_foods.
-  if (Array.isArray(verifiedFoods) && verifiedFoods.length) {
-    const rows = verifiedFoods.map((f) => ({
-      user_id: userId,
-      name: f.name,
-      protein_per_100g: Number(f.protein_per_100g) || 0,
-      carbs_per_100g: Number(f.carbs_per_100g) || 0,
-      fat_per_100g: Number(f.fat_per_100g) || 0,
-      cal_per_100g: Number(f.cal_per_100g) || 0,
-    }));
-    const { error } = await supabase
-      .from('user_foods')
-      .upsert(rows, { onConflict: 'user_id,name' });
-    if (error) throw new Error('Saving foods failed: ' + error.message);
-  }
-
-  // 2. Save split.
-  let splitId = null;
-  if (Array.isArray(parsed?.training_split)) {
-    const { split, wk: exercises } = splitToAppShape(parsed.training_split);
-    const { data, error } = await supabase
-      .from('custom_splits')
-      .insert({
-        user_id: userId,
-        name,
-        days: split,
-        exercises,
-        is_template: false,
-      })
-      .select()
-      .single();
-    if (error) throw new Error('Saving split failed: ' + error.message);
-    splitId = data.id;
-  }
-
-  // 3. Save meals (training + off) as custom_meals rows.
-  const mealIds = {};
-  const supps = suppsToAppShape(parsed?.supplements) || [];
-  const targets = targetsToAppShape(parsed?.macro_targets);
-  const trainingMeals = mealsToAppShape(parsed?.meals?.training_day, 'im');
-  const offMeals = mealsToAppShape(parsed?.meals?.off_day, 'io');
-
-  if (trainingMeals) {
-    const { data, error } = await supabase
-      .from('custom_meals')
-      .insert({
-        user_id: userId,
-        name,
-        type: 'training',
-        meals: trainingMeals,
-        targets: targets?.tr || {},
-        supplements: supps,
-        is_template: false,
-      })
-      .select()
-      .single();
-    if (error) throw new Error('Saving training meals failed: ' + error.message);
-    mealIds.training = data.id;
-  }
-  if (offMeals) {
-    const { data, error } = await supabase
-      .from('custom_meals')
-      .insert({
-        user_id: userId,
-        name,
-        type: 'off',
-        meals: offMeals,
-        targets: targets?.off || {},
-        supplements: supps,
-        is_template: false,
-      })
-      .select()
-      .single();
-    if (error) throw new Error('Saving off-day meals failed: ' + error.message);
-    mealIds.off = data.id;
-  }
-
-  // 4. Deactivate existing programs, insert the new active one.
-  await supabase
-    .from('programs')
-    .update({ active: false })
-    .eq('user_id', userId)
-    .eq('active', true);
-
   const start = today();
-  const { error: progErr } = await supabase.from('programs').insert({
-    user_id: userId,
-    name,
-    start_date: start,
-    weeks: wk,
-    active: true,
-    imported: true,
-  });
-  if (progErr) throw new Error('Saving program failed: ' + progErr.message);
 
-  // Program object for app state (mirrors the in-memory `programs` shape,
-  // with import markers so the app knows to override built-in data).
+  // Build an FDB-style map of the verified unknown foods for this program.
+  const foodMap = {};
+  const foodRows = [];
+  if (Array.isArray(verifiedFoods)) {
+    for (const f of verifiedFoods) {
+      if (!f?.name) continue;
+      const p = Number(f.protein_per_100g) || 0;
+      const c = Number(f.carbs_per_100g) || 0;
+      const fat = Number(f.fat_per_100g) || 0;
+      const cal = Number(f.cal_per_100g) || 0;
+      foodMap[f.name] = { p, c, f: fat, cal };
+      foodRows.push({
+        user_id: userId, name: f.name,
+        protein_per_100g: p, carbs_per_100g: c, fat_per_100g: fat, cal_per_100g: cal,
+      });
+    }
+  }
+
+  // Best-effort: also store the foods globally so they're reusable across
+  // programs. Never blocks the import — the program blob is self-contained.
+  if (foodRows.length) {
+    try {
+      await supabase.from('user_foods').upsert(foodRows, { onConflict: 'user_id,name' });
+    } catch (err) {
+      console.warn('[import] user_foods save skipped:', err?.message);
+    }
+  }
+
+  // The full bundle that drives the tabs, stored on the program row itself.
+  const data = toAppProgramData(parsed, foodMap);
+
   return {
+    id: newId(),
     name,
     start,
     weeks: wk,
     active: true,
     imported: true,
-    splitId,
-    mealIds,
+    data,
   };
 }

@@ -56,11 +56,13 @@ export async function loadRemoteState(supabase, userId) {
     calfPhase: profile.calf_phase ?? 2,
     sledStage: profile.sled_stage ?? 0,
     programs: (programs || []).map((p) => ({
+      id: p.id,
       name: p.name,
       start: p.start_date,
       weeks: p.weeks,
       active: p.active,
       imported: p.imported || false,
+      data: p.data || null,
     })),
     weightLog: (dailyLogs || [])
       .filter((d) => d.weight != null)

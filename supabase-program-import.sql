@@ -23,13 +23,16 @@ create policy "Users own user_foods" on user_foods
   for all using (auth.uid() = user_id);
 
 -- ============================================
--- programs.imported flag
+-- programs: imported flag + self-contained data blob
 -- ============================================
--- Marks a program as PDF-imported so the app knows to load its custom
--- split/meals instead of the built-in defaults. Without this column the
--- flag is lost on reload and the app reverts to the default program.
+-- Each program row now carries everything it needs. `imported` marks a
+-- PDF-imported program; `data` holds the full bundle (split, meals, macros,
+-- supplements, foods) so the app never has to re-join it by name on reload.
+-- Without these columns the imported program is lost on reload and the app
+-- reverts to the built-in default program.
 
 alter table programs add column if not exists imported boolean not null default false;
+alter table programs add column if not exists data jsonb;
 
 -- ============================================
 -- DONE

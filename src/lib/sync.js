@@ -49,20 +49,34 @@ export function createSyncEngine(userId) {
   }
 
   async function syncPrograms(state) {
-    // Delete all existing and reinsert (array is small)
-    await supabase.from('programs').delete().eq('user_id', userId);
-    const rows = (state.programs || []).map((p) => ({
-      user_id: userId,
-      name: p.name,
-      start_date: p.start,
-      weeks: p.weeks,
-      active: p.active,
-      imported: p.imported || false,
-    }));
-    if (rows.length) {
-      const { error } = await supabase.from('programs').insert(rows);
-      if (error) throw error;
-    }
+    // Upsert on the client-stable id, then prune rows that no longer exist.
+    // This never wipes the table on a failed write (unlike delete-then-insert):
+    // if the upsert throws, we return before pruning anything.
+    const rows = (state.programs || [])
+      .filter((p) => p.id)
+      .map((p) => ({
+        id: p.id,
+        user_id: userId,
+        name: p.name,
+        start_date: p.start,
+        weeks: p.weeks,
+        active: p.active,
+        imported: p.imported || false,
+        data: p.data || null,
+      }));
+    if (!rows.length) return;
+
+    const { error } = await supabase.from('programs').upsert(rows, { onConflict: 'id' });
+    if (error) throw error;
+
+    // Remove any DB rows for this user that aren't in the current set.
+    const ids = rows.map((r) => r.id);
+    const { error: pruneErr } = await supabase
+      .from('programs')
+      .delete()
+      .eq('user_id', userId)
+      .not('id', 'in', `(${ids.join(',')})`);
+    if (pruneErr) console.warn('[sync] programs prune skipped:', pruneErr.message);
   }
 
   async function syncDailyLogs(state) {

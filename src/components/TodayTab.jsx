@@ -5,7 +5,7 @@ import Label from './shared/Label';
 import MacroBar from './shared/MacroBar';
 import StreakDashboard from './StreakDashboard';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps = [], isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart, onImportProgram }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps = [], isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart, onImportProgram, onSwitchProgram }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
@@ -203,6 +203,30 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
                 <button onClick={() => { goMaintenance(); setConfirmMaint(false); }} style={{ flex: 1, background: "rgba(245,166,35,0.15)", border: "1px solid rgba(245,166,35,0.3)", color: S.am, borderRadius: 6, padding: "8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>PAUSE & SWITCH</button>
               </div>
             </div>
+          )}
+
+          {/* Program library — every saved program; tap one to make it active. */}
+          {(st.programs || []).length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, margin: "8px 0 6px", letterSpacing: 1 }}>YOUR PROGRAMS:</div>
+              {(st.programs || []).map((p) => (
+                <div key={p.id || p.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", marginBottom: 6, background: p.active ? "rgba(0,212,170,0.06)" : "rgba(255,255,255,0.03)", border: `1px solid ${p.active ? "rgba(0,212,170,0.25)" : S.bd}`, borderRadius: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: p.active ? S.gr : S.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {p.name}{p.imported ? " 📄" : ""}
+                    </div>
+                    <div style={{ fontSize: 9, color: S.dm }}>
+                      {p.weeks ? `${p.weeks} weeks` : "No end date"}{p.active ? " · Active" : ""}
+                    </div>
+                  </div>
+                  {p.active ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: S.gr, flexShrink: 0 }}>ACTIVE</span>
+                  ) : (
+                    <button onClick={() => onSwitchProgram && onSwitchProgram(p.id)} style={{ flexShrink: 0, background: S.bl, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>START</button>
+                  )}
+                </div>
+              ))}
+            </>
           )}
 
           <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, margin: "8px 0 6px", letterSpacing: 1 }}>START A NEW PROGRAM:</div>

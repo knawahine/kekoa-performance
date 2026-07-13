@@ -9,7 +9,6 @@ import { compressImage, uploadPhoto } from './lib/photos';
 import { migrateLocalToSupabase, isMigrated } from './lib/migrate';
 import { calcStreaks, calcWeeklyConsistency, updatePersonalBests } from './lib/streaks';
 import { resolveProgramData } from './lib/activeProgram';
-import { loadImportedData } from './lib/programImport';
 import TodayTab from './components/TodayTab';
 import MealsTab from './components/MealsTab';
 import TrainingTab from './components/TrainingTab';
@@ -95,9 +94,7 @@ export default function App({ initialOnboardState }) {
   const [remoteLoaded, setRemoteLoaded] = useState(false);
   const [migrating, setMigrating] = useState(false);
 
-  // Imported-program data (split/meals/macros/foods) for the active program,
-  // and the PDF file currently being imported (drives the import modal).
-  const [importedData, setImportedData] = useState(null);
+  // The PDF file currently being imported (drives the import modal).
   const [importFile, setImportFile] = useState(null);
 
   // Save to localStorage on every change (existing behavior)
@@ -112,8 +109,16 @@ export default function App({ initialOnboardState }) {
     loadRemoteState(supabase, user.id)
       .then(async (remote) => {
         if (remote) {
-          // Remote data exists — use it
-          setSt((prev) => ({ ...prev, ...remote }));
+          // Remote data exists — use it. But never let an empty remote program
+          // list clobber locally-held programs (e.g. if a prior broken sync
+          // wiped the table); keep the local ones so they re-sync back.
+          setSt((prev) => ({
+            ...prev,
+            ...remote,
+            programs: (remote.programs && remote.programs.length)
+              ? remote.programs
+              : prev.programs,
+          }));
         } else if (loadState() && !isMigrated()) {
           // No remote data but local data exists — migrate
           setMigrating(true);
@@ -132,16 +137,19 @@ export default function App({ initialOnboardState }) {
       });
   }, [user, remoteLoaded]);
 
-  // Load imported program data from DB when the active program is an import.
+  // Backfill stable ids on any programs that predate id-based sync (e.g. saved
+  // to localStorage before this version). Runs once, then no-ops.
   useEffect(() => {
-    if (!user) return;
-    const active = st.programs?.find((p) => p.active);
-    if (active?.imported && !importedData) {
-      loadImportedData(user.id, active.name).then((data) => {
-        if (data) setImportedData(data);
-      });
-    }
-  }, [user, st.programs, importedData]);
+    if (!st.programs?.some((p) => !p.id)) return;
+    const mkId = () => {
+      try { if (crypto?.randomUUID) return crypto.randomUUID(); } catch { /* ignore */ }
+      return `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+    };
+    setSt((s) => ({
+      ...s,
+      programs: (s.programs || []).map((p) => (p.id ? p : { ...p, id: mkId() })),
+    }));
+  }, [st.programs]);
 
   // ── Photo upload handler (compress → Supabase Storage) ─────
   const handlePhotoUpload = async (weekNum, angle, file) => {
@@ -167,8 +175,9 @@ export default function App({ initialOnboardState }) {
   const cappedWk = isCut ? Math.min(cw, activeProg.weeks || 12) : cw;
   const totalWks = isCut ? (activeProg.weeks || 12) : cw;
 
-  // Resolve program data: imported program (when active) overrides built-in defaults.
-  const PD = useMemo(() => resolveProgramData(activeProg, importedData), [activeProg, importedData]);
+  // Resolve program data: an imported program (when active) carries its own
+  // self-contained data bundle, which overrides the built-in defaults.
+  const PD = useMemo(() => resolveProgramData(activeProg), [activeProg]);
   const calcMacros = (n, g) => calcMacrosWith(PD.FDB, n, g);
 
   const split = PD.SPLIT[si];
@@ -211,9 +220,34 @@ export default function App({ initialOnboardState }) {
   const setMF = (mid, foods) => setSt((s) => ({ ...s, mealOverrides: { ...s.mealOverrides, [d]: { ...s.mealOverrides[d], [mid]: foods } } }));
   const logEx = (day, eid, si2, data) => setSt((s) => ({ ...s, exLogs: { ...s.exLogs, [d]: { ...s.exLogs[d], [`${day}-${eid}`]: { ...s.exLogs[d]?.[`${day}-${eid}`], [si2]: data } } } }));
 
+  const mkProgId = () => {
+    try { if (crypto?.randomUUID) return crypto.randomUUID(); } catch { /* ignore */ }
+    return `p-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  };
+
   const startNew = (name, weeks) => {
-    const newProg = { name, start: today(), weeks: parseInt(weeks) || 0, active: true };
+    const newProg = { id: mkProgId(), name, start: today(), weeks: parseInt(weeks) || 0, active: true };
     setSt((s) => ({ ...s, mode: weeks > 0 ? "cut" : "maintenance", programs: (s.programs || []).map((p) => ({ ...p, active: false })).concat(newProg) }));
+  };
+
+  // Re-activate a saved program from the library, starting it fresh today.
+  const switchProgram = (id) => {
+    setSt((s) => {
+      const target = (s.programs || []).find((p) => p.id === id);
+      if (!target) return s;
+      const start = today();
+      return {
+        ...s,
+        mode: target.weeks > 0 ? "cut" : "maintenance",
+        startDate: start,
+        programs: (s.programs || []).map((p) =>
+          p.id === id
+            ? { ...p, active: true, paused: false, start }
+            : { ...p, active: false }
+        ),
+      };
+    });
+    setTab("today");
   };
   const goMaintenance = () => {
     setSt((s) => ({
@@ -255,8 +289,7 @@ export default function App({ initialOnboardState }) {
   // ── Program Import ─────────────────────────────────────────
   const handleImportProgram = (file) => setImportFile(file);
 
-  const handleImported = (programPayload, newImportedData) => {
-    setImportedData(newImportedData);
+  const handleImported = (programPayload) => {
     setSt((s) => ({
       ...s,
       mode: programPayload.weeks > 0 ? "cut" : "maintenance",
@@ -348,7 +381,7 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps: PD.SUPPS, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start, onImportProgram: handleImportProgram }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps: PD.SUPPS, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start, onImportProgram: handleImportProgram, onSwitchProgram: switchProgram }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals, foodMap: PD.FDB }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d, SPLIT: PD.SPLIT, WK: PD.WK }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}
