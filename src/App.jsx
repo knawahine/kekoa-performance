@@ -230,6 +230,18 @@ export default function App({ initialOnboardState }) {
     setSt((s) => ({ ...s, mode: weeks > 0 ? "cut" : "maintenance", programs: (s.programs || []).map((p) => ({ ...p, active: false })).concat(newProg) }));
   };
 
+  // Rename a saved program in the library.
+  const renameProgram = (id, name) => {
+    const trimmed = (name || '').trim();
+    if (!trimmed) return;
+    setSt((s) => ({
+      ...s,
+      programs: (s.programs || []).map((p) =>
+        p.id === id ? { ...p, name: trimmed } : p
+      ),
+    }));
+  };
+
   // Re-activate a saved program from the library, starting it fresh today.
   const switchProgram = (id) => {
     setSt((s) => {
@@ -381,7 +393,7 @@ export default function App({ initialOnboardState }) {
 
       {/* Content */}
       <div style={{ padding: "14px 14px 0" }}>
-        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps: PD.SUPPS, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start, onImportProgram: handleImportProgram, onSwitchProgram: switchProgram }} />}
+        {tab === "today" && <TodayTab {...{ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps: PD.SUPPS, isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests: st.personalBests, onToggleFreeze: toggleStreakFreeze, onUpdateStartDate: updateStartDate, activeProgramStart: activeProg.start, onImportProgram: handleImportProgram, onSwitchProgram: switchProgram, onRenameProgram: renameProgram }} />}
         {tab === "meals" && <MealsTab {...{ meals, tgt, mc, tMeal, isTr, setMF, baseMeals, foodMap: PD.FDB }} />}
         {tab === "training" && <TrainingTab {...{ si, pk, ph, cw: cappedWk, exLogs: st.exLogs[d] || {}, logEx, allExLogs: st.exLogs, todayStr: d, SPLIT: PD.SPLIT, WK: PD.WK }} />}
         {tab === "rehab" && <RehabTab {...{ cp: st.calfPhase, ss: st.sledStage, rehabChecks: st.rehabChecks, setSt, d }} />}

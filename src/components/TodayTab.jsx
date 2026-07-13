@@ -5,12 +5,20 @@ import Label from './shared/Label';
 import MacroBar from './shared/MacroBar';
 import StreakDashboard from './StreakDashboard';
 
-export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps = [], isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart, onImportProgram, onSwitchProgram }) {
+export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, split, supps = [], isTr, score, mH, sH, cappedWk, isCut, goMaintenance, resumeProgram, pausedProg, startNew, totalWks, st, streaks, personalBests, onToggleFreeze, onUpdateStartDate, activeProgramStart, onImportProgram, onSwitchProgram, onRenameProgram }) {
   const [showMode, setShowMode] = useState(false);
   const [newName, setNewName] = useState("");
   const [newWks, setNewWks] = useState("");
   const [confirmMaint, setConfirmMaint] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
   const fileRef = useRef(null);
+
+  const beginRename = (p) => { setEditingId(p.id); setEditName(p.name || ""); };
+  const commitRename = () => {
+    if (editingId && onRenameProgram) onRenameProgram(editingId, editName);
+    setEditingId(null); setEditName("");
+  };
   const programDone = isCut && cappedWk >= totalWks;
   const activeProg = st.programs?.find((p) => p.active);
 
@@ -211,18 +219,37 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
               <div style={{ fontSize: 11, fontWeight: 700, color: S.dm, margin: "8px 0 6px", letterSpacing: 1 }}>YOUR PROGRAMS:</div>
               {(st.programs || []).map((p) => (
                 <div key={p.id || p.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "8px 10px", marginBottom: 6, background: p.active ? "rgba(0,212,170,0.06)" : "rgba(255,255,255,0.03)", border: `1px solid ${p.active ? "rgba(0,212,170,0.25)" : S.bd}`, borderRadius: 8 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: p.active ? S.gr : S.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {p.name}{p.imported ? " 📄" : ""}
-                    </div>
-                    <div style={{ fontSize: 9, color: S.dm }}>
-                      {p.weeks ? `${p.weeks} weeks` : "No end date"}{p.active ? " · Active" : ""}
-                    </div>
-                  </div>
-                  {p.active ? (
-                    <span style={{ fontSize: 10, fontWeight: 700, color: S.gr, flexShrink: 0 }}>ACTIVE</span>
+                  {editingId === p.id ? (
+                    <>
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setEditingId(null); setEditName(""); } }}
+                        autoFocus
+                        style={{ flex: 1, minWidth: 0, background: "#1a2744", border: `1px solid ${S.bl}`, borderRadius: 6, padding: "6px 8px", color: S.tx, fontSize: 12, outline: "none" }}
+                      />
+                      <button onClick={commitRename} style={{ flexShrink: 0, background: S.gr, color: "#04121e", border: "none", borderRadius: 6, padding: "6px 10px", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>SAVE</button>
+                      <button onClick={() => { setEditingId(null); setEditName(""); }} style={{ flexShrink: 0, background: "transparent", color: S.dm, border: `1px solid ${S.bd}`, borderRadius: 6, padding: "6px 8px", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>✕</button>
+                    </>
                   ) : (
-                    <button onClick={() => onSwitchProgram && onSwitchProgram(p.id)} style={{ flexShrink: 0, background: S.bl, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>START</button>
+                    <>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: p.active ? S.gr : S.tx, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {p.name}{p.imported ? " 📄" : ""}
+                        </div>
+                        <div style={{ fontSize: 9, color: S.dm }}>
+                          {p.weeks ? `${p.weeks} weeks` : "No end date"}{p.active ? " · Active" : ""}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => beginRename(p)} title="Rename" style={{ background: "transparent", border: `1px solid ${S.bd}`, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer", lineHeight: 1 }}>✏️</button>
+                        {p.active ? (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: S.gr }}>ACTIVE</span>
+                        ) : (
+                          <button onClick={() => onSwitchProgram && onSwitchProgram(p.id)} style={{ background: S.bl, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontWeight: 700, fontSize: 10, cursor: "pointer" }}>START</button>
+                        )}
+                      </div>
+                    </>
                   )}
                 </div>
               ))}
