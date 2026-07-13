@@ -67,6 +67,9 @@ export async function parseProgramPdf(file, userId) {
     try {
       const ctx = await error.context?.json?.();
       if (ctx?.error) detail = ctx.error;
+      if (ctx?.stop_reason && ctx.stop_reason !== 'end_turn') {
+        detail += ` (stop reason: ${ctx.stop_reason})`;
+      }
       if (ctx?.raw) console.warn('[import] raw model output:', ctx.raw);
       if (ctx?.detail) console.warn('[import] server detail:', ctx.detail);
     } catch { /* ignore */ }

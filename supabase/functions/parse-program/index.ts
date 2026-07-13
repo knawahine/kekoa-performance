@@ -96,7 +96,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 16000,
+        max_tokens: 24000,
         system: buildSystemPrompt(knownFoods),
         messages: [
           {
@@ -125,8 +125,17 @@ Deno.serve(async (req: Request) => {
 
   if (!anthropicRes.ok) {
     const errText = await anthropicRes.text();
+    // Pull a human-readable reason out of the Anthropic error envelope.
+    let reason = errText;
+    try {
+      const j = JSON.parse(errText);
+      reason = j?.error?.message || errText;
+    } catch { /* keep raw text */ }
     return jsonResponse(
-      { error: "Anthropic API error (" + anthropicRes.status + ")", detail: errText },
+      {
+        error: "Anthropic API error (" + anthropicRes.status + "): " + String(reason).slice(0, 300),
+        detail: errText,
+      },
       502,
     );
   }

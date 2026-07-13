@@ -39,9 +39,13 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
   const [programName, setProgramName] = useState('Imported Program');
   const [weeks, setWeeks] = useState('');
 
-  // Parse the PDF on mount.
+  const [attempt, setAttempt] = useState(0);
+
+  // Parse the PDF on mount (and on each retry via `attempt`).
   useEffect(() => {
     let cancelled = false;
+    setPhase('uploading');
+    setError('');
     (async () => {
       try {
         const data = await parseProgramPdf(file, user?.id);
@@ -64,7 +68,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [file, user]);
+  }, [file, user, attempt]);
 
   const updateFood = (i, key, value) => {
     setFoods((prev) => prev.map((f, j) => (j === i ? { ...f, [key]: value, estimated: false } : f)));
@@ -129,10 +133,18 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
         <div style={pad}>
           <Card>
             <Label color={S.rd}>IMPORT FAILED</Label>
-            <div style={{ fontSize: 12, color: '#c8c4bb', lineHeight: 1.5, marginTop: 8 }}>{error}</div>
-            <button onClick={onClose} style={{ marginTop: 14, width: '100%', background: S.bl, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-              CLOSE
-            </button>
+            <div style={{ fontSize: 12, color: '#c8c4bb', lineHeight: 1.5, marginTop: 8, wordBreak: 'break-word' }}>{error || 'Something went wrong while parsing your PDF.'}</div>
+            <div style={{ fontSize: 10, color: S.dm, lineHeight: 1.5, marginTop: 10 }}>
+              Tip: if this keeps happening, the PDF may be very large or scanned as images. Try a text-based PDF, or a shorter one.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button onClick={() => setAttempt((a) => a + 1)} style={{ flex: 1, background: S.bl, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                TRY AGAIN
+              </button>
+              <button onClick={onClose} style={{ flex: 1, background: 'transparent', color: S.dm, border: `1px solid ${S.bd}`, borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                CLOSE
+              </button>
+            </div>
           </Card>
         </div>
       </div>
