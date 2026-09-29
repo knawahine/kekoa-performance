@@ -131,7 +131,7 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
           <input
             ref={fileRef}
             type="file"
-            accept="application/pdf"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             style={{ display: "none" }}
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -143,8 +143,8 @@ export default function TodayTab({ meals, mc, sc, tMeal, tSupp, consumed, tgt, s
             onClick={() => fileRef.current?.click()}
             style={{ width: "100%", background: "rgba(56,145,255,0.08)", border: "1px solid rgba(56,145,255,0.25)", borderRadius: 8, padding: "10px 12px", marginBottom: 12, cursor: "pointer", textAlign: "left" }}
           >
-            <div style={{ fontSize: 12, fontWeight: 700, color: S.bl }}>📄 Import Program from PDF</div>
-            <div style={{ fontSize: 10, color: "#c8c4bb", marginTop: 2 }}>Upload a training PDF — Claude extracts workouts, meals & macros.</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: S.bl }}>📄 Import Program from PDF or Word</div>
+            <div style={{ fontSize: 10, color: "#c8c4bb", marginTop: 2 }}>Upload a PDF or Word (.docx) program — Claude extracts workouts, meals & macros.</div>
           </button>
 
           {/* Start Date Editor */}

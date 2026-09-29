@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { S } from '../lib/styles';
 import { useAuth } from '../context/AuthContext';
-import { parseProgramPdf, saveImportedProgram } from '../lib/programImport';
+import { parseProgramFile, saveImportedProgram } from '../lib/programImport';
 import Card from './shared/Card';
 import Label from './shared/Label';
 
@@ -48,7 +48,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
     setError('');
     (async () => {
       try {
-        const data = await parseProgramPdf(file, user?.id);
+        const data = await parseProgramFile(file, user?.id);
         if (cancelled) return;
         setParsed(data);
         const unknown = Array.isArray(data.unknown_foods) ? data.unknown_foods : [];
@@ -119,7 +119,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
             {phase === 'uploading' ? 'Parsing your program…' : 'Saving program…'}
           </div>
           <div style={{ fontSize: 12, color: S.dm, marginTop: 8 }}>
-            {phase === 'uploading' ? 'Claude is reading your PDF' : 'Almost done'}
+            {phase === 'uploading' ? 'Claude is reading your document' : 'Almost done'}
           </div>
         </div>
       </div>
@@ -133,9 +133,9 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
         <div style={pad}>
           <Card>
             <Label color={S.rd}>IMPORT FAILED</Label>
-            <div style={{ fontSize: 12, color: '#c8c4bb', lineHeight: 1.5, marginTop: 8, wordBreak: 'break-word' }}>{error || 'Something went wrong while parsing your PDF.'}</div>
+            <div style={{ fontSize: 12, color: '#c8c4bb', lineHeight: 1.5, marginTop: 8, wordBreak: 'break-word' }}>{error || 'Something went wrong while parsing your document.'}</div>
             <div style={{ fontSize: 10, color: S.dm, lineHeight: 1.5, marginTop: 10 }}>
-              Tip: if this keeps happening, the PDF may be very large or scanned as images. Try a text-based PDF, or a shorter one.
+              Tip: if this keeps happening, the file may be very large or scanned as images. Try a text-based PDF or Word (.docx) file, or a shorter one.
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
               <button onClick={() => setAttempt((a) => a + 1)} style={{ flex: 1, background: S.bl, color: '#fff', border: 'none', borderRadius: 8, padding: '10px', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
@@ -178,7 +178,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
 
         {/* Training split */}
         <Section title="TRAINING SPLIT" count={split.length ? `${split.length} days` : 'none'}>
-          {split.length === 0 && <div style={{ fontSize: 11, color: S.dm }}>Not found in PDF — built-in split will be kept.</div>}
+          {split.length === 0 && <div style={{ fontSize: 11, color: S.dm }}>Not found in document — built-in split will be kept.</div>}
           {split.map((d, i) => (
             <div key={i} style={{ marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${S.bd}` }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: d.type === 'off' ? S.gr : '#fff' }}>
@@ -214,7 +214,7 @@ export default function ProgramImportModal({ file, onClose, onImported }) {
 
         {/* Macro targets */}
         <Section title="MACRO TARGETS">
-          {!mt && <div style={{ fontSize: 11, color: S.dm }}>Not found in PDF.</div>}
+          {!mt && <div style={{ fontSize: 11, color: S.dm }}>Not found in document.</div>}
           {mt && [['Training', mt.training], ['Off', mt.off]].map(([label, t]) => (
             t ? (
               <div key={label} style={{ fontSize: 11, color: '#c8c4bb', marginBottom: 4 }}>

@@ -1,6 +1,7 @@
 // Supabase Edge Function: parse-program
-// Receives a base64 PDF, sends it to the Anthropic API (claude-sonnet-4-6),
-// and returns structured JSON describing the training program.
+// Receives either a base64 PDF (pdfBase64) or extracted document text
+// (docText, e.g. from a Word .docx), sends it to the Anthropic API
+// (claude-sonnet-4-6), and returns structured JSON describing the program.
 //
 // The Anthropic API key is read from the ANTHROPIC_API_KEY secret and is
 // NEVER exposed to the frontend.
@@ -16,7 +17,7 @@ const corsHeaders = {
 };
 
 const BASE_SYSTEM_PROMPT =
-  "You are a fitness program parser. Extract the following from this training program PDF and return ONLY valid JSON with no other text: training_split as an array of 7 objects Mon-Sun each with day, session_name, subtitle, type (training or off), exercises (array of {name, sets, reps, rest, notes, progression}). meals as an object with training_day and off_day keys, each containing an array of meals with name, time, foods (array of {name, grams}). macro_targets as an object with training {cal, p, c, f} and off {cal, p, c, f}. supplements as an array of {name, timing, dose}. If any section is not found in the PDF, return null for that key.";
+  "You are a fitness program parser. Extract the following from this training program document and return ONLY valid JSON with no other text: training_split as an array of 7 objects Mon-Sun each with day, session_name, subtitle, type (training or off), exercises (array of {name, sets, reps, rest, notes, progression}). meals as an object with training_day and off_day keys, each containing an array of meals with name, time, foods (array of {name, grams}). macro_targets as an object with training {cal, p, c, f} and off {cal, p, c, f}. supplements as an array of {name, timing, dose}. If any section is not found in the document, return null for that key.";
 
 function buildSystemPrompt(knownFoods: string[]): string {
   const known = (knownFoods || []).join(", ");
@@ -72,18 +73,43 @@ Deno.serve(async (req: Request) => {
     );
   }
 
-  let pdfBase64: string;
+  let pdfBase64: string | undefined;
+  let docText: string | undefined;
   let knownFoods: string[];
   try {
     const body = await req.json();
-    pdfBase64 = body.pdfBase64;
+    pdfBase64 = typeof body.pdfBase64 === "string" ? body.pdfBase64 : undefined;
+    docText = typeof body.docText === "string" ? body.docText.trim() : undefined;
     knownFoods = Array.isArray(body.knownFoods) ? body.knownFoods : [];
-    if (!pdfBase64 || typeof pdfBase64 !== "string") {
-      return jsonResponse({ error: "Missing pdfBase64 in request body." }, 400);
+    if (!pdfBase64 && !docText) {
+      return jsonResponse(
+        { error: "Missing pdfBase64 or docText in request body." },
+        400,
+      );
     }
   } catch {
     return jsonResponse({ error: "Invalid JSON request body." }, 400);
   }
+
+  // Build the user message: a native document block for PDFs, or the
+  // extracted text for Word documents.
+  const userContent: unknown[] = pdfBase64
+    ? [
+        {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: pdfBase64 },
+        },
+        { type: "text", text: "Parse this program." },
+      ]
+    : [
+        {
+          type: "text",
+          text:
+            "Here is the full text of a training program document:\n\n" +
+            docText +
+            "\n\nParse this program.",
+        },
+      ];
 
   let anthropicRes: Response;
   try {
@@ -98,22 +124,7 @@ Deno.serve(async (req: Request) => {
         model: MODEL,
         max_tokens: 24000,
         system: buildSystemPrompt(knownFoods),
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "document",
-                source: {
-                  type: "base64",
-                  media_type: "application/pdf",
-                  data: pdfBase64,
-                },
-              },
-              { type: "text", text: "Parse this program." },
-            ],
-          },
-        ],
+        messages: [{ role: "user", content: userContent }],
       }),
     });
   } catch (err) {
@@ -150,7 +161,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     const truncated = stopReason === "max_tokens";
     const msg = truncated
-      ? "The program was too long to parse in one pass (response was truncated). Try a shorter PDF or split it."
+      ? "The program was too long to parse in one pass (response was truncated). Try a shorter document or split it."
       : "Model did not return valid JSON.";
     return jsonResponse(
       { error: msg, stop_reason: stopReason, raw: jsonText?.slice(0, 4000) },

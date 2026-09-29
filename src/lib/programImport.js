@@ -1,10 +1,23 @@
-// Program import: read a PDF, send it to the parse-program Edge Function,
-// convert the parsed JSON into the in-memory shapes the app's tabs expect,
-// and persist the result to Supabase.
+// Program import: read a PDF or Word (.docx) file, send it to the
+// parse-program Edge Function, convert the parsed JSON into the in-memory
+// shapes the app's tabs expect, and persist the result to Supabase.
 
+import mammoth from 'mammoth';
 import { supabase } from './supabase';
 import { today } from './helpers';
 import { FDB } from '../data/foods';
+
+// ── File type detection ──────────────────────────────────────
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+export function detectProgramFileType(file) {
+  const name = (file?.name || '').toLowerCase();
+  const type = (file?.type || '').toLowerCase();
+  if (type === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (type === DOCX_MIME || name.endsWith('.docx')) return 'docx';
+  if (name.endsWith('.doc')) return 'doc'; // legacy binary Word — unsupported
+  return 'unknown';
+}
 
 // ── PDF → base64 ─────────────────────────────────────────────
 export function readPdfAsBase64(file) {
@@ -19,6 +32,19 @@ export function readPdfAsBase64(file) {
     reader.onerror = () => reject(new Error('Failed to read PDF file.'));
     reader.readAsDataURL(file);
   });
+}
+
+// ── Word (.docx) → plain text ────────────────────────────────
+// Extracts the document text in the browser so the Edge Function can send it
+// to Claude as text (the Anthropic document API accepts PDFs, not .docx).
+export async function readDocxAsText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const { value } = await mammoth.extractRawText({ arrayBuffer });
+  const text = (value || '').trim();
+  if (!text) {
+    throw new Error('That Word document appears to be empty or contains only images. Try a document with typed text.');
+  }
+  return text;
 }
 
 // ── Load the user's saved custom foods ───────────────────────
@@ -49,17 +75,28 @@ export function userFoodsToMap(rows) {
 }
 
 // ── Call the Edge Function ───────────────────────────────────
-export async function parseProgramPdf(file, userId) {
-  const pdfBase64 = await readPdfAsBase64(file);
+// Accepts a PDF (sent as base64 for Claude's native PDF reading) or a Word
+// .docx (text extracted client-side and sent as docText).
+export async function parseProgramFile(file, userId) {
+  const kind = detectProgramFileType(file);
+  if (kind === 'doc') {
+    throw new Error('Legacy .doc files aren\'t supported. In Word, use "Save As" and choose the .docx format, then try again.');
+  }
+  if (kind === 'unknown') {
+    throw new Error('Unsupported file type. Please upload a PDF or a Word (.docx) document.');
+  }
+
+  const body = {};
+  if (kind === 'pdf') body.pdfBase64 = await readPdfAsBase64(file);
+  else body.docText = await readDocxAsText(file);
+
   const userFoodMap = userId ? await fetchUserFoods(userId) : {};
-  const knownFoods = [
+  body.knownFoods = [
     ...Object.keys(FDB),
     ...Object.keys(userFoodMap),
   ];
 
-  const { data, error } = await supabase.functions.invoke('parse-program', {
-    body: { pdfBase64, knownFoods },
-  });
+  const { data, error } = await supabase.functions.invoke('parse-program', { body });
 
   if (error) {
     // supabase-js wraps non-2xx responses; surface any server message.
@@ -80,6 +117,9 @@ export async function parseProgramPdf(file, userId) {
   }
   return data;
 }
+
+// Back-compat alias (older callers).
+export const parseProgramPdf = parseProgramFile;
 
 // ── Shape conversion: parsed JSON → app in-memory shapes ─────
 
